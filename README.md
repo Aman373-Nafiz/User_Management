@@ -169,3 +169,243 @@ curl -X GET http://localhost:8080/users/
   }
 ]
 ```
+
+# Testing Documentation
+
+This document provides instructions on how to run unit tests for the project and troubleshoot common issues.
+
+## Running Unit Tests
+
+### Using Maven
+
+To run all tests using Maven:
+
+```bash
+mvn test
+```
+
+To run a specific test class:
+
+```bash
+mvn test -Dtest=UserServiceTest
+```
+
+Or for controller tests:
+
+```bash
+mvn test -Dtest=UserControllerTest
+```
+
+### Using an IDE
+
+#### IntelliJ IDEA
+
+1. Right-click on the test class or test folder
+2. Select "Run 'TestClassName'" or "Run 'Tests in directory'"
+3. View test results in the run window
+
+#### Eclipse
+
+1. Right-click on the test class or test folder
+2. Select "Run As" > "JUnit Test"
+3. View test results in the JUnit tab
+
+## Project Structure
+
+The test structure follows the application structure:
+
+```
+src
+├── main
+│   └── java
+│       └── com
+│           └── example
+│               └── demo
+│                   ├── controller
+│                   │   └── UserController.java
+│                   ├── model
+│                   │   ├── UserModel.java
+│                   │   ├── ParentModel.java
+│                   │   └── ChildModel.java
+│                   ├── repository
+│                   │   └── UserRepository.java
+│                   └── service
+│                       └── UserService.java
+└── test
+    └── java
+        └── com
+            └── example
+                └── demo
+                    ├── controller
+                    │   └── UserControllerTest.java
+                    └── service
+                        └── UserServiceTest.java
+```
+
+## Service Layer Testing
+
+### Common Errors and Troubleshooting
+
+If you encounter a `NullPointerException` like:
+
+```
+java.lang.NullPointerException: Cannot invoke "com.example.demo.repository.UserRepository.findById(Object)" because "this.userRepository" is null
+```
+
+Check the following:
+
+1. Ensure you're using the correct mock repositories in your test class:
+   - Your service uses `UserRepository`, so your test should mock `UserRepository`
+   - If you're mocking `ParentRepository` or `ChildRepository` but your service uses `UserRepository`, you'll get this error
+
+2. Make sure your test class is properly set up:
+
+   ```java
+   @ExtendWith(MockitoExtension.class)
+   public class UserServiceTest {
+       @Mock
+       private UserRepository userRepository;
+
+       @InjectMocks
+       private UserService userService;
+   }
+   ```
+
+3. If using `@ExtendWith(MockitoExtension.class)`, you don't need to call `MockitoAnnotations.openMocks(this)` in your `@BeforeEach` method
+
+## Controller Layer Testing
+
+### Setup
+
+Controller tests use Spring's `MockMvc` to simulate HTTP requests without starting a full server. Your test setup should look like:
+
+```java
+@ExtendWith(MockitoExtension.class)
+class UserControllerTest {
+    @Mock
+    private UserService userService;
+
+    @InjectMocks
+    private UserController userController;
+
+    private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+    }
+}
+```
+
+### Best Practices for Controller Testing
+
+1. Initialize `MockMvc` in a `@BeforeEach` method to avoid repetition
+2. Use `ObjectMapper` to convert objects to JSON
+3. Mock the service layer responses
+4. Test HTTP status codes and response content
+5. Verify that service methods are called with correct parameters
+
+### Common Controller Test Examples
+
+#### Testing POST Endpoints
+
+```java
+@Test
+void testCreateParent() throws Exception {
+    ParentModel parent = new ParentModel();
+    parent.setFirstName("John");
+    parent.setLastName("Doe");
+
+    when(userService.createParent(any(ParentModel.class))).thenReturn(parent);
+
+    mockMvc.perform(post("/users/parent")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(parent)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.firstName").value("John"));
+
+    verify(userService, times(1)).createParent(any(ParentModel.class));
+}
+```
+
+#### Testing GET Endpoints
+
+```java
+@Test
+void testGetAllUsers() throws Exception {
+    ParentModel parent = new ParentModel();
+    parent.setFirstName("John");
+
+    when(userService.getAllUsers()).thenReturn(Arrays.asList(parent));
+
+    mockMvc.perform(get("/users/"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].firstName").value("John"));
+
+    verify(userService, times(1)).getAllUsers();
+}
+```
+
+#### Testing PUT/DELETE Endpoints
+
+```java
+@Test
+void testUpdateUser() throws Exception {
+    ParentModel parent = new ParentModel();
+    parent.setId(1L);
+    parent.setFirstName("Updated");
+
+    when(userService.updateUser(eq(1L), any(ParentModel.class))).thenReturn(parent);
+
+    mockMvc.perform(put("/users/1")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(parent)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.firstName").value("Updated"));
+}
+
+@Test
+void testDeleteUser() throws Exception {
+    doNothing().when(userService).deleteUser(1L);
+
+    mockMvc.perform(delete("/users/1"))
+            .andExpect(status().isOk());
+
+    verify(userService, times(1)).deleteUser(1L);
+}
+```
+
+## Integration Testing
+
+For full integration tests with a running application context:
+
+```java
+@SpringBootTest
+@AutoConfigureMockMvc
+class UserControllerIntegrationTest {
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @BeforeEach
+    void setUp() {
+        userRepository.deleteAll();
+        // Setup test data
+    }
+
+    @Test
+    void testCreateParentIntegration() throws Exception {
+        // Test with real repository
+    }
+}
+```
+
+## Additional Resources
+
+- [JUnit 5 Documentation](https://junit.org/junit5/docs/current/user-guide/)
+- [Mockito Documentation](https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html)
+- [Spring Boot Testing Documentation](https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.testing)
+- [MockMvc Documentation](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/test/web/servlet/MockMvc.html)
